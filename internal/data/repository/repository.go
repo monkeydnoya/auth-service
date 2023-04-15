@@ -1,9 +1,14 @@
 package repository
 
-import "github.com/monkeydnoya/hiraishin-auth/pkg/domain"
+import (
+	"github.com/monkeydnoya/hiraishin-auth/pkg/domain"
+)
 
 type AuthRepository interface {
-	GetUserById(id string) (domain.User, error)
-	GetUserByEmail(email string) (domain.User, error)
-	GetUserByUsername(username string) (domain.User, error)
+	GetUserById(id string) (domain.UserResponse, error)
+	GetUserByEmail(email string) (domain.UserResponse, error)
+	GetUserByUsername(username string) (domain.UserResponse, error)
+
+	RegisterUser(user domain.UserRegister) (domain.UserResponse, error)
+	LogIn(user domain.UserLogin) (domain.Token, error)
 }

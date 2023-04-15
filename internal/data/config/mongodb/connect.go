@@ -2,20 +2,22 @@ package mongodb
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"time"
 
+	configuration "github.com/monkeydnoya/hiraishin-auth/pkg/config"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/mongo/readpref"
 )
 
 type Config struct {
-	Host   string
-	Port   string
-	DBName string
-	AppEnv string
+	Host     string
+	Port     string
+	DBName   string
+	AppEnv   string
+	Username string
+	Password string
 }
 
 type Repository struct {
@@ -24,8 +26,11 @@ type Repository struct {
 }
 
 func (config *Config) Connect() (Repository, error) {
-
-	client, err := mongo.NewClient(options.Client().ApplyURI(config.Host))
+	client, err := mongo.NewClient(options.Client().ApplyURI(config.Host).SetAuth(
+		options.Credential{
+			Username: config.Username,
+			Password: config.Password,
+		}))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -43,11 +48,6 @@ func (config *Config) Connect() (Repository, error) {
 		log.Fatal(err)
 	}
 
-	fmt.Println("Database connected!")
-
-	if err != nil {
-		return Repository{Client: client, DbConnection: client.Database(config.DBName)}, err
-	}
-
+	configuration.Logger.Infow("MongoDB successfully connected")
 	return Repository{Client: client, DbConnection: client.Database(config.DBName)}, nil
 }

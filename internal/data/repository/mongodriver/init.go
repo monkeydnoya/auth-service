@@ -1,9 +1,8 @@
 package mongodriver
 
 import (
-	"fmt"
-
 	"github.com/monkeydnoya/hiraishin-auth/internal/data/repository"
+	configuration "github.com/monkeydnoya/hiraishin-auth/pkg/config"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -17,7 +16,7 @@ type AuthDAO struct {
 }
 
 func (c Config) Init() (repository.AuthRepository, error) {
-	fmt.Println("[INFO] Auth repository for mongo driver init")
+	configuration.Logger.Infow("Repository for mongo driver initialized")
 	auth := AuthDAO{
 		DB: c.Database,
 	}

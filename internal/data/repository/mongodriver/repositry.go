@@ -2,49 +2,159 @@ package mongodriver
 
 import (
 	"context"
-	"fmt"
+	"errors"
+	"strings"
 	"time"
 
+	pwd "github.com/monkeydnoya/hiraishin-auth/internal/domain/utils"
+	"github.com/monkeydnoya/hiraishin-auth/pkg/config"
 	"github.com/monkeydnoya/hiraishin-auth/pkg/domain"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// Interface realization
-func (a AuthDAO) GetUserByEmail(email string) (domain.User, error) {
-	user := User{}
+func (a AuthDAO) GetUserById(id string) (domain.UserResponse, error) {
+	user := UserRegister{}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-	err := a.DB.Collection("Users").FindOne(ctx, bson.M{"email": email}).Decode(&user)
+	idObjectID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
-		fmt.Println("Error when finding in database")
-		return domain.User{}, err
+		return domain.UserResponse{}, err
 	}
 
-	return toModel(user), nil
-}
-
-func (a AuthDAO) GetUserById(id string) (domain.User, error) {
-	user := User{}
-
-	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-	err := a.DB.Collection("Users").FindOne(ctx, bson.M{"id": id}).Decode(&user)
+	err = a.DB.Collection("User").FindOne(ctx, bson.M{"_id": idObjectID}).Decode(&user)
 	if err != nil {
-		fmt.Println("Error when finding in database")
-		return toModel(User{}), err
+		return domain.UserResponse{}, err
 	}
 
-	return toModel(user), nil
+	return responseModel(user), nil
 }
 
-func (a AuthDAO) GetUserByUsername(username string) (domain.User, error) {
-	user := User{}
+func (a AuthDAO) GetUserByEmail(email string) (domain.UserResponse, error) {
+	user := domain.UserResponse{}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+	err := a.DB.Collection("User").FindOne(ctx, bson.M{"email": email}).Decode(&user)
+	if err != nil {
+		return domain.UserResponse{}, err
+	}
+
+	return user, nil
+}
+
+func (a AuthDAO) GetUserByUsername(username string) (domain.UserResponse, error) {
+	user := UserRegister{}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	err := a.DB.Collection("Users").FindOne(ctx, bson.M{"username": username}).Decode(&user)
 	if err != nil {
-		fmt.Println("Error when finding in database")
-		return domain.User{}, err
+		return responseModel(UserRegister{}), err
 	}
 
-	return toModel(user), nil
+	return responseModel(user), nil
+}
+
+func (a AuthDAO) RegisterUser(user domain.UserRegister) (domain.UserResponse, error) {
+	user.CreatedAt = time.Now()
+	user.Email = strings.ToLower(user.Email)
+	user.PasswordConfirm = ""
+	user.Verified = true
+
+	hashedPassword, err := pwd.HashPassword(user.Password)
+	if err != nil {
+		return domain.UserResponse{}, err
+	}
+	user.Password = hashedPassword
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	result, err := a.DB.Collection("User").InsertOne(ctx, &user)
+
+	if err != nil {
+		if er, ok := err.(mongo.WriteException); ok && er.WriteErrors[0].Code == 11000 {
+			return domain.UserResponse{}, errors.New("user with that email already exist")
+		}
+		return responseModel(UserRegister{}), err
+	}
+
+	opt := options.Index()
+	opt.SetUnique(true)
+
+	index := mongo.IndexModel{Keys: bson.M{"email": 1}, Options: opt}
+
+	if _, err := a.DB.Collection("User").Indexes().CreateOne(ctx, index); err != nil {
+		return domain.UserResponse{}, errors.New("could not create index for email")
+	}
+
+	var newUser UserRegister
+	err = a.DB.Collection("User").FindOne(ctx, bson.M{"_id": result.InsertedID}).Decode(&newUser)
+	if err != nil {
+		return responseModel(UserRegister{}), err
+	}
+
+	return responseModel(newUser), nil
+}
+
+func (a AuthDAO) LogIn(credentials domain.UserLogin) (domain.Token, error) {
+	user, err := a.getUser(credentials.Username)
+	if err != nil {
+		return domain.Token{}, err
+	}
+
+	if err = pwd.VerifyPassword(user.Password, credentials.Password); err != nil {
+		return domain.Token{}, err
+	}
+
+	accessTokenExpire, err := time.ParseDuration(config.Config("ACCESS_TOKEN_EXPIRED_IN"))
+	if err != nil {
+		return domain.Token{}, err
+	}
+	accessToken, err := pwd.CreateToken(accessTokenExpire, user.ID, config.Config("ACCESS_TOKEN_PRIVATE_KEY"))
+	if err != nil {
+		return domain.Token{}, err
+	}
+
+	refreshTokenExpire, err := time.ParseDuration(config.Config("REFRESH_TOKEN_EXPIRED_IN"))
+	if err != nil {
+		return domain.Token{}, err
+	}
+	refreshToken, err := pwd.CreateToken(refreshTokenExpire, user.ID, config.Config("REFRESH_TOKEN_PRIVATE_KEY"))
+	if err != nil {
+		return domain.Token{}, err
+	}
+
+	token := domain.Token{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+	}
+
+	return token, nil
+}
+
+func (a AuthDAO) getUser(login string) (UserRegister, error) {
+	var err error
+	user := UserRegister{}
+	loginSplited := strings.Split(login, "@")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if len(loginSplited) > 1 {
+		err = a.DB.Collection("User").FindOne(ctx, bson.M{"email": login}).Decode(&user)
+	} else {
+		err = a.DB.Collection("User").FindOne(ctx, bson.M{"username": login}).Decode(&user)
+	}
+
+	if err != nil {
+		return UserRegister{}, err
+	}
+
+	return user, nil
 }
