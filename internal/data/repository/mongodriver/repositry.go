@@ -7,7 +7,6 @@ import (
 	"time"
 
 	pwd "github.com/monkeydnoya/hiraishin-auth/internal/domain/utils"
-	"github.com/monkeydnoya/hiraishin-auth/pkg/config"
 	"github.com/monkeydnoya/hiraishin-auth/pkg/domain"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -102,43 +101,7 @@ func (a AuthDAO) RegisterUser(user domain.UserRegister) (domain.UserResponse, er
 	return responseModel(newUser), nil
 }
 
-func (a AuthDAO) LogIn(credentials domain.UserLogin) (domain.Token, error) {
-	user, err := a.getUser(credentials.Username)
-	if err != nil {
-		return domain.Token{}, err
-	}
-
-	if err = pwd.VerifyPassword(user.Password, credentials.Password); err != nil {
-		return domain.Token{}, err
-	}
-
-	accessTokenExpire, err := time.ParseDuration(config.Config("ACCESS_TOKEN_EXPIRED_IN"))
-	if err != nil {
-		return domain.Token{}, err
-	}
-	accessToken, err := pwd.CreateToken(accessTokenExpire, user.ID, config.Config("ACCESS_TOKEN_PRIVATE_KEY"))
-	if err != nil {
-		return domain.Token{}, err
-	}
-
-	refreshTokenExpire, err := time.ParseDuration(config.Config("REFRESH_TOKEN_EXPIRED_IN"))
-	if err != nil {
-		return domain.Token{}, err
-	}
-	refreshToken, err := pwd.CreateToken(refreshTokenExpire, user.ID, config.Config("REFRESH_TOKEN_PRIVATE_KEY"))
-	if err != nil {
-		return domain.Token{}, err
-	}
-
-	token := domain.Token{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-	}
-
-	return token, nil
-}
-
-func (a AuthDAO) getUser(login string) (UserRegister, error) {
+func (a AuthDAO) GetUser(login string) (domain.UserRegister, error) {
 	var err error
 	user := UserRegister{}
 	loginSplited := strings.Split(login, "@")
@@ -153,8 +116,8 @@ func (a AuthDAO) getUser(login string) (UserRegister, error) {
 	}
 
 	if err != nil {
-		return UserRegister{}, err
+		return domain.UserRegister{}, err
 	}
 
-	return user, nil
+	return userRegisterEntityToModel(user), nil
 }

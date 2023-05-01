@@ -10,5 +10,6 @@ type AuthRepository interface {
 	GetUserByUsername(username string) (domain.UserResponse, error)
 
 	RegisterUser(user domain.UserRegister) (domain.UserResponse, error)
-	LogIn(user domain.UserLogin) (domain.Token, error)
+
+	GetUser(login string) (domain.UserRegister, error)
 }

@@ -30,6 +30,7 @@ type DBResponse struct {
 }
 
 type UserRegister struct {
+	ID              string    `json:"id"`
 	FirstName       string    `json:"firstname"`
 	LastName        string    `json:"lastname" validate:"required"`
 	UserName        string    `json:"username" validate:"required"`
@@ -44,19 +45,4 @@ type UserRegister struct {
 type UserLogin struct {
 	Username string `json:"username" validate:"required"`
 	Password string `json:"password,omitempty" validate:"required"`
-}
-
-type Token struct {
-	AccessToken  string `json:"accesstoken"`
-	RefreshToken string `json:"refreshtoken"`
-}
-
-type ValidateToken struct {
-	AccessToken string `json:"accesstoken"`
-	UserID      string `json:"userid"`
-	IsExpired   bool   `json:"isexpired"`
-}
-
-type TokenExpire struct {
-	Message string `json:"expire"`
 }

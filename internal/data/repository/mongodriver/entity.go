@@ -37,3 +37,18 @@ func responseModel(user UserRegister) domain.UserResponse {
 		CreatedAt: user.CreatedAt,
 	}
 }
+
+func userRegisterEntityToModel(user UserRegister) domain.UserRegister {
+	return domain.UserRegister{
+		ID:              user.ID.Hex(),
+		UserName:        user.UserName,
+		Email:           user.Email,
+		FirstName:       user.FirstName,
+		LastName:        user.LastName,
+		Role:            user.Role,
+		CreatedAt:       user.CreatedAt,
+		Password:        user.Password,
+		PasswordConfirm: user.PasswordConfirm,
+		Verified:        user.Verified,
+	}
+}

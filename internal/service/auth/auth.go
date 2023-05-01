@@ -1,11 +1,7 @@
 package auth
 
 import (
-	"fmt"
-	"strings"
-
-	"github.com/gofiber/fiber/v2"
-	"github.com/monkeydnoya/hiraishin-auth/internal/domain/utils"
+	pwd "github.com/monkeydnoya/hiraishin-auth/internal/domain/utils"
 	configuration "github.com/monkeydnoya/hiraishin-auth/pkg/config"
 	"github.com/monkeydnoya/hiraishin-auth/pkg/domain"
 )
@@ -46,56 +42,36 @@ func (s Service) RegisterUser(user domain.UserRegister) (domain.UserResponse, er
 	return response, nil
 }
 
-func (s Service) LogIn(user domain.UserLogin) (domain.Token, error) {
-	response, err := s.DAO.LogIn(user)
+func (s Service) LogIn(credentials domain.UserLogin) (domain.JWTTokenResponse, error) {
+	user, err := s.DAO.GetUser(credentials.Username)
 	if err != nil {
-		configuration.Logger.Errorw("login error:", err)
-		return domain.Token{}, err
+		return domain.JWTTokenResponse{}, err
 	}
-	return response, nil
-}
 
-func (s Service) DeserializeUser() fiber.Handler {
-	return func(ctx *fiber.Ctx) error {
-		var accessToken string
-		cookie := ctx.Cookies("access_token")
-		authorizationHeader := ctx.Get("Authorization")
-		authHeaderString := fmt.Sprint(authorizationHeader)
-		fields := strings.Fields(authHeaderString)
-
-		if len(fields) != 0 && fields[0] == "Bearer" {
-			accessToken = fields[1]
-		} else if cookie != "" {
-			accessToken = cookie
-		}
-		sub, err := utils.ValidateToken(accessToken, configuration.Config("ACCESS_TOKEN_PUBLIC_KEY"))
-		if err != nil {
-			configuration.Logger.Infow("validation error: validate token:", err)
-			return ctx.SendStatus(fiber.StatusUnauthorized)
-		}
-
-		user, err := s.GetUserById(fmt.Sprint(sub))
-		if err != nil {
-			configuration.Logger.Infow("validation error: user not found:", err)
-			return ctx.SendStatus(fiber.StatusUnauthorized)
-		}
-
-		ctx.Locals("currentUser", user)
-
-		// TODO: Actualize pass cookie
-		ctx.Cookie(&fiber.Cookie{
-			Name:     "email",
-			Value:    user.Email,
-			HTTPOnly: true,
-			SameSite: "lax",
-		})
-		ctx.Cookie(&fiber.Cookie{
-			Name:     "username",
-			Value:    user.UserName,
-			HTTPOnly: true,
-			SameSite: "lax",
-		})
-
-		return ctx.Next()
+	if err = pwd.VerifyPassword(user.Password, credentials.Password); err != nil {
+		return domain.JWTTokenResponse{}, err
 	}
+
+	accessToken := &domain.Token{
+		TokenType: domain.Access,
+	}
+	accessToken, err = s.JWTToken.CreateToken(user.ID, accessToken)
+	if err != nil {
+		return domain.JWTTokenResponse{}, err
+	}
+
+	refreshToken := &domain.Token{
+		TokenType: domain.Refresh,
+	}
+	refreshToken, err = s.JWTToken.CreateToken(user.ID, refreshToken)
+	if err != nil {
+		return domain.JWTTokenResponse{}, err
+	}
+
+	jwttoken := domain.JWTTokenResponse{
+		AccessToken:  accessToken.Token,
+		RefreshToken: refreshToken.Token,
+	}
+
+	return jwttoken, nil
 }
